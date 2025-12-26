@@ -1,0 +1,59 @@
+import logging
+from pathlib import Path
+
+import hydra
+import torch
+from omegaconf import DictConfig
+from transformers import ViTForImageClassification, ViTImageProcessor
+
+log = logging.getLogger(__name__)
+
+
+@hydra.main(config_path="../../configs", config_name="config", version_base="1.3")
+def export_to_onnx(cfg: DictConfig):
+    output_dir = Path(cfg.training.output_dir)
+    final_model_path = output_dir / "final_model"
+    onnx_path = Path("models") / "model.onnx"
+
+    onnx_path.parent.mkdir(exist_ok=True, parents=True)
+
+    log.info(f"Поиск модели в {final_model_path}...")
+
+    if final_model_path.exists():
+        model_id = str(final_model_path)
+    else:
+        log.warning("Обученная модель не найдена! Экспортируем базовую (для теста).")
+        model_id = cfg.model.name
+
+    log.info(f"Загрузка весов из: {model_id}")
+    model = ViTForImageClassification.from_pretrained(
+        model_id, attn_implementation="eager"
+    )
+    processor = ViTImageProcessor.from_pretrained(model_id)
+
+    model.eval()
+
+    height = processor.size["height"]
+    width = processor.size["width"]
+    dummy_input = torch.randn(1, 3, height, width)
+
+    log.info(f"Экспорт модели в {onnx_path}...")
+
+    torch.onnx.export(
+        model,
+        dummy_input,
+        str(onnx_path),
+        export_params=True,
+        opset_version=12,
+        do_constant_folding=True,
+        input_names=["input"],
+        output_names=["output"],
+        dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}},
+    )
+
+    log.info("Модель успешно экспортирована в ONNX!")
+    log.info(f"Файл: {onnx_path}")
+
+
+if __name__ == "__main__":
+    export_to_onnx()

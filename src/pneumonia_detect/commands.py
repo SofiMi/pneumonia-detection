@@ -39,7 +39,10 @@ def train(config_name: str = "config"):
     train_model(cfg)
 
 
-def infer(image_path: str, config_name: str = "config"):
+def infer(image_path: str, mode: str = "onnx", config_name: str = "config"):
+    """
+    mode: "pytorch", "onnx", "tensorrt"
+    """
     with initialize(version_base="1.3", config_path="../../configs"):
         cfg = compose(config_name=config_name)
 
@@ -48,9 +51,9 @@ def infer(image_path: str, config_name: str = "config"):
         log.error(f"Файл не найден: {image_file}")
         sys.exit(1)
 
-    from pneumonia_detect.infer import inference
+    from pneumonia_detect.infer import run_inference
 
-    inference(cfg, image_file)
+    run_inference(cfg, image_file, mode=mode)
 
 
 if __name__ == "__main__":
