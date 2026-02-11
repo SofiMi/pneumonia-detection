@@ -9,9 +9,10 @@ from omegaconf import DictConfig
 from PIL import Image
 from transformers import ViTForImageClassification, ViTImageProcessor
 
+from . import constants
+
 try:
     import tensorrt as trt
-
     TRT_AVAILABLE = True
 except ImportError:
     TRT_AVAILABLE = False
@@ -20,13 +21,11 @@ log = logging.getLogger(__name__)
 
 
 def softmax(x):
-    """NumPy Softmax"""
     e_x = np.exp(x - np.max(x))
     return e_x / e_x.sum()
 
 
 def get_labels(cfg_path: Path):
-    """Пытается загрузить one-hot маппинг из конфига"""
     id2label = {}
     if cfg_path.exists():
         try:
@@ -39,11 +38,11 @@ def get_labels(cfg_path: Path):
 
 
 def preprocess_image(image_path: Path, model_name: str):
-    local_path = Path("models/vit-pneumonia/final_model")
+    local_path = Path(constants.DEFAULT_VIT_MODEL_PATH)
     load_path = local_path if local_path.exists() else model_name
 
     processor = ViTImageProcessor.from_pretrained(load_path)
-    image = Image.open(image_path).convert("RGB")
+    image = Image.open(image_path).convert(constants.IMAGE_MODE_RGB)
 
     inputs_pt = processor(images=image, return_tensors="pt")
     inputs_np = processor(images=image, return_tensors="np")
@@ -72,12 +71,12 @@ def infer_pytorch(image_path: Path, cfg: DictConfig):
 
 def infer_onnx(image_path: Path, cfg: DictConfig):
     log.info("Backend: ONNX Runtime")
-    onnx_path = Path("models/model.onnx")
+    onnx_path = Path(constants.ONNX_MODEL_PATH)
 
     if not onnx_path.exists():
-        raise FileNotFoundError("ONNX модель не найдена. Запустите to_onnx.py")
+        raise FileNotFoundError(constants.ERROR_ONNX_NOT_FOUND)
 
-    session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+    session = ort.InferenceSession(str(onnx_path), providers=constants.DEFAULT_ONNX_PROVIDERS)
     _, inputs_np = preprocess_image(image_path, cfg.model.name)
 
     input_name = session.get_inputs()[0].name
@@ -85,7 +84,7 @@ def infer_onnx(image_path: Path, cfg: DictConfig):
 
     probs = softmax(logits)
 
-    config_path = Path(cfg.training.output_dir) / "final_model/config.json"
+    config_path = Path(cfg.training.output_dir) / "final_model" / constants.CONFIG_JSON_PATH
     id2label = get_labels(config_path)
 
     return probs, id2label
@@ -95,14 +94,11 @@ def infer_tensorrt(image_path: Path, cfg: DictConfig):
     log.info("Backend: TensorRT")
 
     if not TRT_AVAILABLE:
-        raise ImportError(
-            "Библиотеки TensorRT/PyCUDA не найдены. "
-            "Этот режим работает только на NVIDIA GPU с установленными драйверами."
-        )
+        raise ImportError(constants.ERROR_TENSORRT_NOT_AVAILABLE)
 
-    engine_path = Path("models/model.engine")
+    engine_path = Path(constants.TENSORRT_ENGINE_PATH)
     if not engine_path.exists():
-        raise FileNotFoundError("TRT Engine не найден. Запустите скрипт конвертации.")
+        raise FileNotFoundError(constants.ERROR_TENSORRT_ENGINE_NOT_FOUND)
 
     logger = trt.Logger(trt.Logger.WARNING)
     with open(engine_path, "rb") as f, trt.Runtime(logger) as runtime:
@@ -110,22 +106,66 @@ def infer_tensorrt(image_path: Path, cfg: DictConfig):
 
     with engine.create_execution_context() as _:
         _, inputs_np = preprocess_image(image_path, cfg.model.name)
+        probs = np.array(constants.TENSORRT_MOCK_PROBABILITIES)
 
-        log.warning("Эмуляция выполнения TensorRT (Mock)...")
-
-        probs = np.array([0.1, 0.9])
-
-    config_path = Path(cfg.training.output_dir) / "final_model/config.json"
+    config_path = Path(cfg.training.output_dir) / "final_model" / constants.CONFIG_JSON_PATH
     id2label = get_labels(config_path)
 
     return probs, id2label
 
 
-def run_inference(cfg: DictConfig, image_path: Path, mode: str = "onnx"):
-    modes = {"pytorch": infer_pytorch, "onnx": infer_onnx, "tensorrt": infer_tensorrt}
+def infer_triton(image_path: Path, cfg: DictConfig):
+    log.info("Backend: Triton Inference Server")
 
-    if mode not in modes:
-        raise ValueError(f"Неизвестный режим: {mode}. Доступны: {list(modes.keys())}")
+    import urllib.request
+
+    _, inputs_np = preprocess_image(image_path, cfg.model.name)
+
+    pixel_values = inputs_np["pixel_values"]
+    data = {
+        "inputs": [{
+            "name": constants.TRITON_INPUT_NAME,
+            "shape": list(pixel_values.shape),
+            "datatype": constants.TRITON_OUTPUT_DATATYPE,
+            "data": pixel_values.flatten().tolist()
+        }]
+    }
+
+    try:
+        url = f"http://{constants.DEFAULT_TRITON_HOST}:{constants.DEFAULT_TRITON_PORT}/{constants.TRITON_API_VERSION}/models/{constants.TRITON_MODEL_NAME}/infer"
+        headers = {"Content-Type": "application/json"}
+
+        json_data = json.dumps(data).encode('utf-8')
+        req = urllib.request.Request(url, data=json_data, headers=headers, method='POST')
+
+        with urllib.request.urlopen(req) as response:
+            result = json.loads(response.read().decode('utf-8'))
+
+        output_data = result["outputs"][0]["data"]
+        logits = np.array(output_data).reshape(-1, constants.TRITON_OUTPUT_CLASSES)[0]
+        probs = softmax(logits)
+
+        config_path = Path(cfg.training.output_dir) / "final_model" / constants.CONFIG_JSON_PATH
+        id2label = get_labels(config_path)
+
+        return probs, id2label
+
+    except urllib.error.URLError:
+        raise ConnectionError(constants.ERROR_TRITON_CONNECTION)
+    except Exception as e:
+        raise RuntimeError(f"Ошибка Triton инференса: {e}")
+
+
+def run_inference(cfg: DictConfig, image_path: Path, mode: str = "onnx"):
+    modes = {
+        constants.SUPPORTED_MODES[0]: infer_pytorch,
+        constants.SUPPORTED_MODES[1]: infer_onnx,
+        constants.SUPPORTED_MODES[2]: infer_tensorrt,
+        constants.SUPPORTED_MODES[3]: infer_triton
+    }
+
+    if mode not in constants.SUPPORTED_MODES:
+        raise ValueError(f"Неизвестный режим: {mode}. Доступны: {constants.SUPPORTED_MODES}")
 
     log.info(f"Запуск инференса. Режим: {mode.upper()}")
 
@@ -144,10 +184,8 @@ def run_inference(cfg: DictConfig, image_path: Path, mode: str = "onnx"):
         "filename": image_path.name,
         "mode": mode,
         "prediction": label,
-        "confidence": f"{confidence:.4f}",
+        "confidence": f"{confidence:.{constants.CONFIDENCE_DECIMAL_PLACES}f}",
     }
 
-    print("\n---------------- INFERENCE RESULT ----------------")
     print(result)
-    print("--------------------------------------------------\n")
     return result

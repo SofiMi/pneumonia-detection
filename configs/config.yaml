@@ -3,9 +3,10 @@ defaults:
   - data: chest_xray
   - model: vit
   - training: default
+  - inference: default
 
 random_seed: 42
 
 mlflow:
-  tracking_uri: null
+  tracking_uri: "http://127.0.0.1:8080"
   experiment_name: "pneumonia_detection_vit"

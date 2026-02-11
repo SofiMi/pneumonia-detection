@@ -1,12 +1,12 @@
 #!/bin/bash
 
-REPO_PATH=$(pwd)/model_repository
+REPO_PATH=$(pwd)/triton_models
 
-echo "=== Starting Triton Inference Server (CPU Mode) ==="
 echo "Model Repository: $REPO_PATH"
 
 if [ ! -d "$REPO_PATH" ]; then
-    echo "Ошибка: Папка model_repository не найдена."
+    echo "Ошибка: Папка triton_models не найдена."
+    echo "Запустите сначала: poetry run python src/pneumonia_detect/commands.py setup_triton"
     exit 1
 fi
 

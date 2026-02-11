@@ -1,0 +1,27 @@
+# Inference configuration
+paths:
+  models_dir: "models"
+  onnx_model: "models/model.onnx"
+  tensorrt_engine: "models/model.engine"
+  vit_model_fallback: "models/vit-pneumonia/final_model"
+
+triton:
+  host: "localhost"
+  port: 8000
+  model_name: "pneumonia_detection"
+  api_version: "v2"
+  input_name: "input"
+  max_batch_size: 8
+  max_queue_delay_microseconds: 100
+
+onnx:
+  providers: ["CPUExecutionProvider"]
+  opset_version: 12
+
+formatting:
+  confidence_decimal_places: 4
+
+tensorrt:
+  mock_probabilities: [0.1, 0.9]  # Placeholder values for testing
+
+supported_modes: ["pytorch", "onnx", "tensorrt", "triton"]

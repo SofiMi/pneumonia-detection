@@ -49,6 +49,13 @@ poetry run pre-commit install
 Проект автоматически скачивает данные. Для этого нужен API ключ.
 
 Положите файл kaggle.json в `~/.kaggle/kaggle.json`.
+Пример того, как выглядит файл:
+```
+{
+  "username": "user_name",
+  "key": "KGAT_123456789qwertyu"
+}
+```
 ## 🚀 Train
 Обучение запускается через единую точку входа. Скрипт автоматически проверит наличие данных, скачает их при необходимости, зафиксирует в DVC и запустит тренировку.
 
@@ -57,8 +64,8 @@ poetry run pre-commit install
 ```
 poetry run python src/pneumonia_detect/commands.py train
 ```
+Обучение 
 Конфигурация (Hydra)
-Вы можете менять параметры обучения "на лету" без изменения кода.
 Конфиги лежат в папке configs/.
 
 Пример:
@@ -100,42 +107,53 @@ poetry run python src/pneumonia_detect/to_onnx.py
 3. Triton Inference Server
 Подготовка Model Repository для запуска промышленного сервера инференса.
 
-```
-poetry run python scripts/setup_triton.py
+```bash
+poetry run python src/pneumonia_detect/commands.py setup_triton
 ```
 
-Запуск сервера (требуется Docker)
-```
+```bash
 ./scripts/run_triton.sh
 ```
+
+Проверка работы сервера:
+```bash
+# Проверка готовности
+curl localhost:8000/v2/health/ready
+
+# Информация о модели
+curl localhost:8000/v2/models/pneumonia_detection
+```
+
 ## 🔮 Infer (Инференс)
 Скрипт предсказания поддерживает несколько бэкендов выполнения. Код инференса отделен от обучения.
 
 Синтаксис:
-
+```bash
+poetry run python src/pneumonia_detect/commands.py infer <ПУТЬ_К_ИЗОБРАЖЕНИЮ> <РЕЖИМ>
 ```
-poetry run python src/pneumonia_detect/commands.py infer --image_path="ПУТЬ_К_КРАТИНКЕ" --mode="РЕЖИМ"
-```
 
-Режимы работы (--mode):
-- `onnx` (Рекомендуемый): Использует onnxruntime и файл `models/model.onnx.` Быстрый, легкий, работает на CPU.
+Режимы работы:
+- `onnx`: Использует onnxruntime и файл `models/model.onnx`. Быстрый, легкий, работает на CPU.
 - `pytorch`: Использует оригинальные веса PyTorch (медленнее, требует torch).
-- `tensorrt`: Использует `models/model.engine`. Требует `NVIDIA GPU`.
+- `tensorrt`: Использует `models/model.engine`. Требует NVIDIA GPU.
+- `triton`: Использует Triton Inference Server. Требует запущенный Triton сервер.
 
-Пример запуска:
-```
+Примеры запуска:
+```bash
 poetry run python src/pneumonia_detect/commands.py infer \
-  --image_path="data/raw/chest_xray/val/PNEUMONIA/person1946_bacteria_4874.jpeg" \
-  --mode=onnx
+  "data/raw/chest_xray/chest_xray/test/NORMAL/NORMAL2-IM-0150-0001.jpeg" onnx
+
+
+poetry run python src/pneumonia_detect/commands.py infer \
+  "data/raw/chest_xray/chest_xray/test/PNEUMONIA/person1651_virus_2855.jpeg" triton
 ```
 
 Формат вывода:
-```
-json
+```json
 {
-  "filename": "person1946_bacteria_4874.jpeg",
-  "mode": "onnx",
+  "filename": "person1651_virus_2855.jpeg",
+  "mode": "triton",
   "prediction": "PNEUMONIA",
-  "confidence": "0.9852"
+  "confidence": "0.9981"
 }
-```
+

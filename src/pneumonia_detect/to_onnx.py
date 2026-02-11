@@ -6,6 +6,8 @@ import torch
 from omegaconf import DictConfig
 from transformers import ViTForImageClassification, ViTImageProcessor
 
+from . import constants
+
 log = logging.getLogger(__name__)
 
 
@@ -13,7 +15,7 @@ log = logging.getLogger(__name__)
 def export_to_onnx(cfg: DictConfig):
     output_dir = Path(cfg.training.output_dir)
     final_model_path = output_dir / "final_model"
-    onnx_path = Path("models") / "model.onnx"
+    onnx_path = Path(constants.MODELS_DIR) / "model.onnx"
 
     onnx_path.parent.mkdir(exist_ok=True, parents=True)
 
@@ -27,7 +29,7 @@ def export_to_onnx(cfg: DictConfig):
 
     log.info(f"Загрузка весов из: {model_id}")
     model = ViTForImageClassification.from_pretrained(
-        model_id, attn_implementation="eager"
+        model_id, attn_implementation=constants.ONNX_ATTENTION_IMPLEMENTATION
     )
     processor = ViTImageProcessor.from_pretrained(model_id)
 
@@ -35,7 +37,7 @@ def export_to_onnx(cfg: DictConfig):
 
     height = processor.size["height"]
     width = processor.size["width"]
-    dummy_input = torch.randn(1, 3, height, width)
+    dummy_input = torch.randn(1, constants.TRITON_INPUT_CHANNELS, height, width)
 
     log.info(f"Экспорт модели в {onnx_path}...")
 
@@ -44,11 +46,11 @@ def export_to_onnx(cfg: DictConfig):
         dummy_input,
         str(onnx_path),
         export_params=True,
-        opset_version=12,
+        opset_version=constants.ONNX_OPSET_VERSION,
         do_constant_folding=True,
-        input_names=["input"],
-        output_names=["output"],
-        dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}},
+        input_names=[constants.ONNX_INPUT_NAME],
+        output_names=[constants.ONNX_OUTPUT_NAME],
+        dynamic_axes={constants.ONNX_INPUT_NAME: {0: "batch_size"}, constants.ONNX_OUTPUT_NAME: {0: "batch_size"}},
     )
 
     log.info("Модель успешно экспортирована в ONNX!")

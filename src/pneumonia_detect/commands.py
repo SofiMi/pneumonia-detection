@@ -6,23 +6,23 @@ import fire
 from dvc.repo import Repo
 from hydra import compose, initialize
 
+from pneumonia_detect.data_utils import download_data
+from pneumonia_detect.train import train_model
+from pneumonia_detect.infer import run_inference
+from pneumonia_detect.triton_setup import create_triton_model_repository
+from . import constants
+
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 
 def _prepare_data(cfg) -> None:
     dataset_path = Path(cfg.data.dataset_path)
-
-    from pneumonia_detect.data_utils import download_data
-
     download_data(dataset_path)
-
-    log.info("Фиксация данных в DVC...")
     try:
         repo_root = Path(__file__).resolve().parent.parent.parent
         repo = Repo(repo_root)
         repo.add(str(dataset_path))
-        log.info("Данные зафиксированы в .dvc файле")
     except Exception as err:
         log.warning(f"Не удалось выполнить DVC add: {err}")
 
@@ -33,15 +33,13 @@ def train(config_name: str = "config"):
 
     _prepare_data(cfg)
 
-    from pneumonia_detect.train import train_model
-
     log.info(f"Запуск тренировки с конфигом: {config_name}")
     train_model(cfg)
 
 
 def infer(image_path: str, mode: str = "onnx", config_name: str = "config"):
     """
-    mode: "pytorch", "onnx", "tensorrt"
+    mode: поддерживаемые режимы из constants.SUPPORTED_MODES
     """
     with initialize(version_base="1.3", config_path="../../configs"):
         cfg = compose(config_name=config_name)
@@ -51,9 +49,24 @@ def infer(image_path: str, mode: str = "onnx", config_name: str = "config"):
         log.error(f"Файл не найден: {image_file}")
         sys.exit(1)
 
-    from pneumonia_detect.infer import run_inference
+    if mode not in constants.SUPPORTED_MODES:
+        log.error(f"Неподдерживаемый режим: {mode}. Доступны: {constants.SUPPORTED_MODES}")
+        sys.exit(1)
 
     run_inference(cfg, image_file, mode=mode)
+
+
+def setup_triton(model_version: str = constants.DEFAULT_MODEL_VERSION):
+    """
+    Подготовка модели для Triton Inference Server.
+    
+    Args:
+        model_version: Версия модели
+    """
+    from pneumonia_detect.triton_setup import create_triton_model_repository
+
+    if not create_triton_model_repository(model_version):
+        log.error("Не удалось создать репозиторий моделей")
 
 
 if __name__ == "__main__":
