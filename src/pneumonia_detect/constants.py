@@ -9,8 +9,6 @@ PLOTS_DIR = "plots"
 # Execution providers
 DEFAULT_ONNX_PROVIDERS = ["CPUExecutionProvider"]
 
-# TensorRT mock probabilities (placeholder for actual inference)
-TENSORRT_MOCK_PROBABILITIES = [0.1, 0.9]
 
 # Formatting and precision
 CONFIDENCE_DECIMAL_PLACES = 4

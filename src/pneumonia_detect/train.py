@@ -24,6 +24,7 @@ from torchvision.transforms import (
 from transformers import (
     Trainer,
     TrainingArguments,
+    TrainerCallback,
     ViTForImageClassification,
     ViTImageProcessor,
 )
@@ -70,106 +71,84 @@ def save_static_plots_from_mlflow(run_id: str):
             except Exception as e:
                 log.warning(f"Не удалось получить историю для {metric_name}: {e}")
 
+        fig, axes = plt.subplots(3, 1, figsize=(12, 15))
+        fig.suptitle("Training Metrics", fontsize=16, fontweight='bold')
+
+        # Train Loss
         if (
             constants.METRIC_TRAIN_LOSS in metrics_history
             and metrics_history[constants.METRIC_TRAIN_LOSS]
         ):
-            steps, values = zip(*metrics_history[constants.METRIC_TRAIN_LOSS])
-            plt.figure(figsize=constants.FIGURE_SIZE)
-            plt.plot(
-                steps,
-                values,
-                label="Train Loss",
-                color=constants.COLOR_BLUE,
-                linewidth=2,
-            )
-            plt.xlabel("Step")
-            plt.ylabel("Loss")
-            plt.title("Training Loss")
-            plt.legend()
-            plt.grid(True)
-            plt.savefig(
-                plots_dir / "train_loss.png",
-                dpi=constants.DPI_SETTING,
-                bbox_inches="tight",
-            )
-            plt.close()
+            data = [(step, value) for step, value in metrics_history[constants.METRIC_TRAIN_LOSS] 
+                   if step > 0 and value > 0]
+            if data:
+                steps, values = zip(*data)
+                axes[0].plot(
+                    steps,
+                    values,
+                    label="Train Loss",
+                    color=constants.COLOR_BLUE,
+                    linewidth=2,
+                    marker='o'
+                )
+                axes[0].set_xlabel("Step")
+                axes[0].set_ylabel("Loss")
+                axes[0].set_title("Training Loss")
+                axes[0].legend()
+                axes[0].grid(True)
 
+        # Validation Loss
         if (
             constants.METRIC_EVAL_LOSS in metrics_history
             and metrics_history[constants.METRIC_EVAL_LOSS]
         ):
-            steps, values = zip(*metrics_history[constants.METRIC_EVAL_LOSS])
-            plt.figure(figsize=constants.FIGURE_SIZE)
-            plt.plot(
-                steps, values, label="Eval Loss", color=constants.COLOR_RED, linewidth=2
-            )
-            plt.xlabel("Step")
-            plt.ylabel("Loss")
-            plt.title("Validation Loss")
-            plt.legend()
-            plt.grid(True)
-            plt.savefig(
-                plots_dir / "eval_loss.png",
-                dpi=constants.DPI_SETTING,
-                bbox_inches="tight",
-            )
-            plt.close()
+            data = [(step, value) for step, value in metrics_history[constants.METRIC_EVAL_LOSS] 
+                   if step > 0 and value > 0]
+            if data:
+                steps, values = zip(*data)
+                axes[1].plot(
+                    steps, values, label="Eval Loss", color=constants.COLOR_RED, linewidth=2, marker='o'
+                )
+                axes[1].set_xlabel("Step")
+                axes[1].set_ylabel("Loss")
+                axes[1].set_title("Validation Loss")
+                axes[1].legend()
+                axes[1].grid(True)
 
+        # Validation Accuracy
         if (
             constants.METRIC_EVAL_ACCURACY in metrics_history
             and metrics_history[constants.METRIC_EVAL_ACCURACY]
         ):
-            steps, values = zip(*metrics_history[constants.METRIC_EVAL_ACCURACY])
-            plt.figure(figsize=constants.FIGURE_SIZE)
-            plt.plot(
-                steps,
-                values,
-                label="Accuracy",
-                color=constants.COLOR_GREEN,
-                linewidth=2,
-            )
-            plt.xlabel("Step")
-            plt.ylabel("Accuracy")
-            plt.title("Validation Accuracy")
-            plt.legend()
-            plt.grid(True)
-            plt.savefig(
-                plots_dir / "eval_accuracy.png",
-                dpi=constants.DPI_SETTING,
-                bbox_inches="tight",
-            )
-            plt.close()
+            data = [(step, value) for step, value in metrics_history[constants.METRIC_EVAL_ACCURACY]
+                   if step > 0 and value >= 0]
+            if data:
+                steps, values = zip(*data)
+                axes[2].plot(
+                    steps,
+                    values,
+                    label="Accuracy",
+                    color=constants.COLOR_GREEN,
+                    linewidth=2,
+                    marker='o'
+                )
+                axes[2].set_xlabel("Step")
+                axes[2].set_ylabel("Accuracy")
+                axes[2].set_title("Validation Accuracy")
+                axes[2].set_ylim(0, 1)
+                axes[2].legend()
+                axes[2].grid(True)
+
+        plt.tight_layout()
+        plt.savefig(
+            plots_dir / "training_metrics.png",
+            dpi=constants.DPI_SETTING,
+            bbox_inches="tight",
+        )
+        plt.close()
 
     except Exception as e:
         log.error(f"Ошибка при создании графиков из MLflow: {e}")
-        log.info("Создаем простые графики с финальными метриками...")
-
-        final_metrics = run.data.metrics
-        if final_metrics:
-            plt.figure(figsize=constants.FIGURE_SIZE_SMALL)
-            metric_names = list(final_metrics.keys())
-            metric_values = list(final_metrics.values())
-            plt.bar(
-                metric_names,
-                metric_values,
-                color=[
-                    constants.COLOR_BLUE,
-                    constants.COLOR_RED,
-                    constants.COLOR_GREEN,
-                ],
-            )
-            plt.title("Final Metrics")
-            plt.ylabel("Value")
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            plt.savefig(
-                plots_dir / "final_metrics.png",
-                dpi=constants.DPI_SETTING,
-                bbox_inches="tight",
-            )
-            plt.close()
-            log.info("График финальных метрик сохранен")
 
 
 def prepare_dataframe(
@@ -267,6 +246,12 @@ def compute_metrics(eval_pred):
     return {constants.METRIC_ACCURACY: acc_score}
 
 
+class TrainLossLoggingCallback(TrainerCallback):
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs is not None and "loss" in logs:
+            mlflow.log_metric("train_loss", logs["loss"], step=state.global_step)
+
+
 def collate_fn(examples):
     pixel_values = torch.stack([example["pixel_values"] for example in examples])
     labels = torch.tensor([example["label"] for example in examples])
@@ -358,6 +343,7 @@ def train_model(cfg: DictConfig):
             data_collator=collate_fn,
             compute_metrics=compute_metrics,
             tokenizer=processor,
+            callbacks=[TrainLossLoggingCallback()],
         )
 
         log.info("Начало обучения")

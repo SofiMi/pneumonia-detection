@@ -51,8 +51,6 @@ def preprocess_image(image_path: Path, model_name: str):
 
 
 def infer_pytorch(image_path: Path, cfg: DictConfig):
-    log.info("Backend: PyTorch (Native)")
-
     local_path = Path(cfg.training.output_dir) / "final_model"
     model_path = local_path if local_path.exists() else cfg.model.name
 
@@ -71,7 +69,6 @@ def infer_pytorch(image_path: Path, cfg: DictConfig):
 
 
 def infer_onnx(image_path: Path, cfg: DictConfig):
-    log.info("Backend: ONNX Runtime")
     onnx_path = Path(constants.ONNX_MODEL_PATH)
 
     if not onnx_path.exists():
@@ -96,7 +93,6 @@ def infer_onnx(image_path: Path, cfg: DictConfig):
 
 
 def infer_tensorrt(image_path: Path, cfg: DictConfig):
-    log.info("Backend: TensorRT")
 
     if not TRT_AVAILABLE:
         raise ImportError(constants.ERROR_TENSORRT_NOT_AVAILABLE)
@@ -105,13 +101,45 @@ def infer_tensorrt(image_path: Path, cfg: DictConfig):
     if not engine_path.exists():
         raise FileNotFoundError(constants.ERROR_TENSORRT_ENGINE_NOT_FOUND)
 
+    try:
+        import pycuda.driver as cuda
+        import pycuda.autoinit
+        use_gpu = True
+        log.info("Используется GPU для TensorRT инференса")
+    except ImportError:
+        use_gpu = False
+        log.info("PyCUDA недоступен, используется CPU режим для TensorRT")
+
     logger = trt.Logger(trt.Logger.WARNING)
     with open(engine_path, "rb") as f, trt.Runtime(logger) as runtime:
         engine = runtime.deserialize_cuda_engine(f.read())
 
-    with engine.create_execution_context() as _:
+    with engine.create_execution_context() as context:
         _, inputs_np = preprocess_image(image_path, cfg.model.name)
-        probs = np.array(constants.TENSORRT_MOCK_PROBABILITIES)
+        input_data = inputs_np["pixel_values"].astype(np.float32)
+
+        if use_gpu:
+            output_data = np.empty((1, 2), dtype=np.float32)
+
+            d_input = cuda.mem_alloc(input_data.nbytes)
+            d_output = cuda.mem_alloc(output_data.nbytes)
+
+            cuda.memcpy_htod(d_input, input_data)
+            bindings = [int(d_input), int(d_output)]
+
+            context.execute_v2(bindings)
+            cuda.memcpy_dtoh(output_data, d_output)
+
+            logits = output_data[0]
+        else:
+            output_data = np.empty((1, 2), dtype=np.float32)
+
+            bindings = [input_data.ctypes.data, output_data.ctypes.data]
+
+            context.execute_v2(bindings)
+            logits = output_data[0]
+
+        probs = softmax(logits)
 
     config_path = (
         Path(cfg.training.output_dir) / "final_model" / constants.CONFIG_JSON_PATH
@@ -122,8 +150,6 @@ def infer_tensorrt(image_path: Path, cfg: DictConfig):
 
 
 def infer_triton(image_path: Path, cfg: DictConfig):
-    log.info("Backend: Triton Inference Server")
-
     import urllib.request
 
     _, inputs_np = preprocess_image(image_path, cfg.model.name)

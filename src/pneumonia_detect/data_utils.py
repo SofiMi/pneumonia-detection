@@ -69,17 +69,14 @@ def _cleanup_macos_files(dataset_path: Path) -> None:
     macos_dir = dataset_path / constants.MACOS_HIDDEN_DIR
     if macos_dir.exists():
         shutil.rmtree(macos_dir)
-        log.info(f"Удалена папка {constants.MACOS_HIDDEN_DIR}")
 
     for file_path in dataset_path.rglob(constants.MACOS_HIDDEN_FILE_PREFIX + "*"):
         if file_path.is_file():
             file_path.unlink()
-            log.info(f"Удален служебный файл: {file_path}")
 
     for file_path in dataset_path.rglob(constants.MACOS_DS_STORE):
         if file_path.is_file():
             file_path.unlink()
-            log.info(f"Удален файл {constants.MACOS_DS_STORE}: {file_path}")
 
 
 def get_dvc_file(dataset_path: Path) -> Path:

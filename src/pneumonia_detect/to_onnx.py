@@ -19,15 +19,12 @@ def export_to_onnx(cfg: DictConfig):
 
     onnx_path.parent.mkdir(exist_ok=True, parents=True)
 
-    log.info(f"Поиск модели в {final_model_path}...")
-
     if final_model_path.exists():
         model_id = str(final_model_path)
     else:
-        log.warning("Обученная модель не найдена! Экспортируем базовую (для теста).")
-        model_id = cfg.model.name
+        log.info(f"Модель не найдена")
+        return
 
-    log.info(f"Загрузка весов из: {model_id}")
     model = ViTForImageClassification.from_pretrained(
         model_id, attn_implementation=constants.ONNX_ATTENTION_IMPLEMENTATION
     )
@@ -38,8 +35,6 @@ def export_to_onnx(cfg: DictConfig):
     height = processor.size["height"]
     width = processor.size["width"]
     dummy_input = torch.randn(1, constants.TRITON_INPUT_CHANNELS, height, width)
-
-    log.info(f"Экспорт модели в {onnx_path}...")
 
     torch.onnx.export(
         model,
@@ -56,7 +51,7 @@ def export_to_onnx(cfg: DictConfig):
         },
     )
 
-    log.info("Модель успешно экспортирована в ONNX!")
+    log.info("Модель успешно экспортирована в ONNX")
     log.info(f"Файл: {onnx_path}")
 
 
