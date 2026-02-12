@@ -23,8 +23,8 @@ from torchvision.transforms import (
 )
 from transformers import (
     Trainer,
-    TrainingArguments,
     TrainerCallback,
+    TrainingArguments,
     ViTForImageClassification,
     ViTImageProcessor,
 )
@@ -55,7 +55,7 @@ def save_static_plots_from_mlflow(run_id: str):
 
     try:
         client = mlflow.tracking.MlflowClient()
-        run = client.get_run(run_id)
+        client.get_run(run_id)
 
         metrics_history = {}
         for metric_name in [
@@ -72,15 +72,18 @@ def save_static_plots_from_mlflow(run_id: str):
                 log.warning(f"Не удалось получить историю для {metric_name}: {e}")
 
         fig, axes = plt.subplots(3, 1, figsize=(12, 15))
-        fig.suptitle("Training Metrics", fontsize=16, fontweight='bold')
+        fig.suptitle("Training Metrics", fontsize=16, fontweight="bold")
 
         # Train Loss
         if (
             constants.METRIC_TRAIN_LOSS in metrics_history
             and metrics_history[constants.METRIC_TRAIN_LOSS]
         ):
-            data = [(step, value) for step, value in metrics_history[constants.METRIC_TRAIN_LOSS] 
-                   if step > 0 and value > 0]
+            data = [
+                (step, value)
+                for step, value in metrics_history[constants.METRIC_TRAIN_LOSS]
+                if step > 0 and value > 0
+            ]
             if data:
                 steps, values = zip(*data)
                 axes[0].plot(
@@ -89,7 +92,7 @@ def save_static_plots_from_mlflow(run_id: str):
                     label="Train Loss",
                     color=constants.COLOR_BLUE,
                     linewidth=2,
-                    marker='o'
+                    marker="o",
                 )
                 axes[0].set_xlabel("Step")
                 axes[0].set_ylabel("Loss")
@@ -102,12 +105,20 @@ def save_static_plots_from_mlflow(run_id: str):
             constants.METRIC_EVAL_LOSS in metrics_history
             and metrics_history[constants.METRIC_EVAL_LOSS]
         ):
-            data = [(step, value) for step, value in metrics_history[constants.METRIC_EVAL_LOSS] 
-                   if step > 0 and value > 0]
+            data = [
+                (step, value)
+                for step, value in metrics_history[constants.METRIC_EVAL_LOSS]
+                if step > 0 and value > 0
+            ]
             if data:
                 steps, values = zip(*data)
                 axes[1].plot(
-                    steps, values, label="Eval Loss", color=constants.COLOR_RED, linewidth=2, marker='o'
+                    steps,
+                    values,
+                    label="Eval Loss",
+                    color=constants.COLOR_RED,
+                    linewidth=2,
+                    marker="o",
                 )
                 axes[1].set_xlabel("Step")
                 axes[1].set_ylabel("Loss")
@@ -120,8 +131,11 @@ def save_static_plots_from_mlflow(run_id: str):
             constants.METRIC_EVAL_ACCURACY in metrics_history
             and metrics_history[constants.METRIC_EVAL_ACCURACY]
         ):
-            data = [(step, value) for step, value in metrics_history[constants.METRIC_EVAL_ACCURACY]
-                   if step > 0 and value >= 0]
+            data = [
+                (step, value)
+                for step, value in metrics_history[constants.METRIC_EVAL_ACCURACY]
+                if step > 0 and value >= 0
+            ]
             if data:
                 steps, values = zip(*data)
                 axes[2].plot(
@@ -130,7 +144,7 @@ def save_static_plots_from_mlflow(run_id: str):
                     label="Accuracy",
                     color=constants.COLOR_GREEN,
                     linewidth=2,
-                    marker='o'
+                    marker="o",
                 )
                 axes[2].set_xlabel("Step")
                 axes[2].set_ylabel("Accuracy")

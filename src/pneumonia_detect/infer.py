@@ -103,7 +103,7 @@ def infer_tensorrt(image_path: Path, cfg: DictConfig):
 
     try:
         import pycuda.driver as cuda
-        import pycuda.autoinit
+
         use_gpu = True
         log.info("Используется GPU для TensorRT инференса")
     except ImportError:

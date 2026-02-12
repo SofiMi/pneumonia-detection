@@ -6,12 +6,11 @@ import fire
 from dvc.repo import Repo
 from hydra import compose, initialize
 
+from pneumonia_detect import constants
 from pneumonia_detect.data_utils import download_data
 from pneumonia_detect.infer import run_inference
 from pneumonia_detect.train import train_model
 from pneumonia_detect.triton_setup import create_triton_model_repository
-
-from pneumonia_detect import constants
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)

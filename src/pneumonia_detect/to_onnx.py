@@ -22,7 +22,7 @@ def export_to_onnx(cfg: DictConfig):
     if final_model_path.exists():
         model_id = str(final_model_path)
     else:
-        log.info(f"Модель не найдена")
+        log.info("Модель не найдена")
         return
 
     model = ViTForImageClassification.from_pretrained(
